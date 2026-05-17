@@ -416,7 +416,7 @@ function normalizeAiApiUrl(apiUrl) {
   const trimmed = String(apiUrl || "").trim();
   if (!trimmed) {
     throw new Error(
-      "Invalid apiUrl: apiUrl is required. Please provide a full chat endpoint URL (for example: https://api.openai.com/v1/chat/completions)."
+      "Invalid apiUrl: apiUrl is required. Please provide a chat endpoint URL (for example: https://api.openai.com or https://api.openai.com/v1/chat/completions)."
     );
   }
   let parsed;
@@ -424,10 +424,17 @@ function normalizeAiApiUrl(apiUrl) {
     parsed = new URL(trimmed);
   } catch {
     throw new Error(
-      `Invalid apiUrl: "${apiUrl}". Please provide a valid absolute URL that points to a full chat endpoint.`
+      `Invalid apiUrl: "${apiUrl}". Please provide a valid absolute URL.`
     );
   }
-  parsed.pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+  let path = parsed.pathname.replace(/\/+$/, "") || "/";
+  if (/\/chat\/completions$/.test(path)) {
+  } else if (path === "/") {
+    path = "/v1/chat/completions";
+  } else if (/\/v\d+$/.test(path)) {
+    path = `${path}/chat/completions`;
+  }
+  parsed.pathname = path;
   return parsed.toString();
 }
 function buildAiRequestBody(payload) {
@@ -541,28 +548,33 @@ function createInstantHandler(options) {
   const tokenSigningKey = options.tokenSigningKey ? String(options.tokenSigningKey) : "";
   const clientToken = options.clientToken ? String(options.clientToken) : "";
   const expectedClientTokenBytes = clientToken ? utf8(clientToken) : null;
+  const corsHeaders = buildCorsHeaders(options.cors);
   const vapidValid = isVapidConfigValid(options.vapid);
+  const respond = (status, body) => jsonResponse(status, body, corsHeaders);
   return async function handler(request) {
     onEvent({ type: "request" });
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders });
+    }
     if (request.method !== "POST") {
-      return jsonResponse(405, {
+      return respond(405, {
         success: false,
         error: { code: "METHOD_NOT_ALLOWED", message: "Only POST is supported" }
       });
     }
     if (tokenSigningKey) {
-      const tokenError = await verifyBearerToken(request, tokenSigningKey);
+      const tokenError = await verifyBearerToken(request, tokenSigningKey, respond);
       if (tokenError) return tokenError;
     }
     if (expectedClientTokenBytes) {
-      const tokenError = verifyClientToken(request, expectedClientTokenBytes);
+      const tokenError = verifyClientToken(request, expectedClientTokenBytes, respond);
       if (tokenError) return tokenError;
     }
     let rawBody;
     try {
       rawBody = await request.text();
     } catch (_err) {
-      return jsonResponse(400, {
+      return respond(400, {
         success: false,
         error: { code: "INVALID_PAYLOAD_FORMAT", message: "\u65E0\u6CD5\u8BFB\u53D6\u8BF7\u6C42\u4F53" }
       });
@@ -571,14 +583,14 @@ function createInstantHandler(options) {
     try {
       payload = JSON.parse(rawBody);
     } catch {
-      return jsonResponse(400, {
+      return respond(400, {
         success: false,
         error: { code: "INVALID_PAYLOAD_FORMAT", message: "\u8BF7\u6C42\u4F53\u4E0D\u662F\u5408\u6CD5 JSON" }
       });
     }
     const validation = validateInstantPayload(payload);
     if (!validation.valid) {
-      return jsonResponse(400, {
+      return respond(400, {
         success: false,
         error: {
           code: validation.errorCode,
@@ -588,7 +600,7 @@ function createInstantHandler(options) {
       });
     }
     if (!vapidValid) {
-      return jsonResponse(500, {
+      return respond(500, {
         success: false,
         error: { code: "VAPID_CONFIG_ERROR", message: "VAPID \u914D\u7F6E\u7F3A\u5931\u6216\u65E0\u6548" }
       });
@@ -599,12 +611,12 @@ function createInstantHandler(options) {
         fetch: options.fetch || globalThis.fetch,
         onEvent
       });
-      return jsonResponse(200, { success: true, data: result });
+      return respond(200, { success: true, data: result });
     } catch (err) {
       onEvent({ type: "error", code: err?.code, message: err?.message });
       const code = err?.code || "INTERNAL_ERROR";
       const status = code === "PUSH_SEND_FAILED" || code === "LLM_CALL_FAILED" ? 502 : 500;
-      return jsonResponse(status, {
+      return respond(status, {
         success: false,
         error: { code, message: err?.message || "\u5185\u90E8\u9519\u8BEF" }
       });
@@ -618,51 +630,67 @@ function getHeader(request, name) {
     return "";
   }
 }
-function jsonResponse(status, body) {
+function buildCorsHeaders(cors) {
+  const allowOrigin = cors && typeof cors.allowOrigin === "string" && cors.allowOrigin.trim() ? cors.allowOrigin.trim() : "*";
+  const headers = {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Token",
+    "Access-Control-Max-Age": "86400"
+  };
+  if (allowOrigin !== "*") {
+    headers["Vary"] = "Origin";
+  }
+  return headers;
+}
+function jsonResponse(status, body, extraHeaders) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json; charset=utf-8" }
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      ...extraHeaders || {}
+    }
   });
 }
 function isVapidConfigValid(vapid) {
   if (!vapid || !vapid.email || !vapid.publicKey || !vapid.privateKey) return false;
   return true;
 }
-function verifyClientToken(request, expectedBytes) {
+function verifyClientToken(request, expectedBytes, respond) {
   const received = getHeader(request, "x-client-token");
   if (!received) {
-    return jsonResponse(401, {
+    return respond(401, {
       success: false,
       error: { code: "INVALID_CLIENT_TOKEN", message: "\u7F3A\u5C11 X-Client-Token" }
     });
   }
   const receivedBytes = utf8(received);
   if (!timingSafeEqualBytes(receivedBytes, expectedBytes)) {
-    return jsonResponse(401, {
+    return respond(401, {
       success: false,
       error: { code: "INVALID_CLIENT_TOKEN", message: "X-Client-Token \u65E0\u6548" }
     });
   }
   return null;
 }
-async function verifyBearerToken(request, signingKey) {
+async function verifyBearerToken(request, signingKey, respond) {
   const authHeader = getHeader(request, "authorization");
   if (!authHeader.toLowerCase().startsWith("bearer ")) {
-    return jsonResponse(401, {
+    return respond(401, {
       success: false,
       error: { code: "UNAUTHORIZED", message: "\u7F3A\u5C11 Authorization: Bearer <token>" }
     });
   }
   const token = authHeader.slice(7).trim();
   if (!token) {
-    return jsonResponse(401, {
+    return respond(401, {
       success: false,
       error: { code: "UNAUTHORIZED", message: "\u7A7A Bearer token" }
     });
   }
   const parts = token.split(".");
   if (parts.length !== 3) {
-    return jsonResponse(401, {
+    return respond(401, {
       success: false,
       error: { code: "UNAUTHORIZED", message: "token \u683C\u5F0F\u65E0\u6548" }
     });
@@ -674,13 +702,13 @@ async function verifyBearerToken(request, signingKey) {
   try {
     receivedBytes = base64UrlToBytes(receivedSig);
   } catch {
-    return jsonResponse(401, {
+    return respond(401, {
       success: false,
       error: { code: "UNAUTHORIZED", message: "token \u7B7E\u540D\u683C\u5F0F\u65E0\u6548" }
     });
   }
   if (!timingSafeEqualBytes(receivedBytes, expectedSigBytes)) {
-    return jsonResponse(401, {
+    return respond(401, {
       success: false,
       error: { code: "UNAUTHORIZED", message: "token \u7B7E\u540D\u65E0\u6548" }
     });
@@ -689,13 +717,13 @@ async function verifyBearerToken(request, signingKey) {
   try {
     payload = JSON.parse(utf8Decode(base64UrlToBytes(encodedPayload)));
   } catch {
-    return jsonResponse(401, {
+    return respond(401, {
       success: false,
       error: { code: "UNAUTHORIZED", message: "token payload \u89E3\u6790\u5931\u8D25" }
     });
   }
   if (!payload || payload.v !== 1 || !payload.exp || payload.exp <= Math.floor(Date.now() / 1e3)) {
-    return jsonResponse(401, {
+    return respond(401, {
       success: false,
       error: { code: "UNAUTHORIZED", message: "token \u5DF2\u8FC7\u671F\u6216\u65E0\u6548" }
     });
@@ -715,7 +743,7 @@ function createCloudflareWorker(optionsBuilder) {
 }
 
 // worker/instant-push/src/index.ts
-var inner = createCloudflareWorker((env) => ({
+var src_default = createCloudflareWorker((env) => ({
   vapid: {
     email: env.VAPID_EMAIL || "mailto:noreply@example.com",
     publicKey: env.VAPID_PUBLIC_KEY,
@@ -723,23 +751,6 @@ var inner = createCloudflareWorker((env) => ({
   },
   clientToken: env.AMSG_CLIENT_TOKEN
 }));
-var CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-Client-Token, Authorization",
-  "Access-Control-Max-Age": "86400"
-};
-var src_default = {
-  async fetch(request, env, ctx) {
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: CORS_HEADERS });
-    }
-    const res = await inner.fetch(request, env);
-    const headers = new Headers(res.headers);
-    for (const [k, v] of Object.entries(CORS_HEADERS)) headers.set(k, v);
-    return new Response(res.body, { status: res.status, headers });
-  }
-};
 export {
   src_default as default
 };

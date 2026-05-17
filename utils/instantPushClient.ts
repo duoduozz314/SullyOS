@@ -206,12 +206,6 @@ export async function sendInstantPush(
   }
 }
 
-function buildApiUrl(baseUrl: string): string {
-  if (!baseUrl) return '';
-  if (/\/chat\/completions\s*$/.test(baseUrl)) return baseUrl;
-  return `${baseUrl.replace(/\/+$/, '')}/v1/chat/completions`;
-}
-
 export async function sendTestInstantPush(
   apiConfig: APIConfig,
 ): Promise<{ ok: boolean; error?: string; data?: unknown }> {
@@ -229,10 +223,12 @@ export async function sendTestInstantPush(
     return { ok: false, error: reason ?? '无法获取推送订阅' };
   }
 
+  // amsg-instant 0.4.0+ runs normalizeAiApiUrl Worker-side; we can forward
+  // apiConfig.baseUrl as-is (root / /v1 / full /chat/completions all accepted).
   return sendInstantPush({
     contactName: 'Instant Push 测试',
     completePrompt: '用一句话简短地和用户说一声 hi，确认 Instant Push 工作正常',
-    apiUrl: buildApiUrl(apiConfig.baseUrl),
+    apiUrl: apiConfig.baseUrl,
     apiKey: apiConfig.apiKey,
     primaryModel: apiConfig.model,
     pushSubscription: sub,
