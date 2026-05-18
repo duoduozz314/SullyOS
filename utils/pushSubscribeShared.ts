@@ -113,6 +113,6 @@ export async function subscribeWithRetry(
   }
   return {
     sub: null,
-    reason: `浏览器持续返回 permanently-removed.invalid（已尝试 ${SUBSCRIBE_ATTEMPTS_MAX} 次）— site engagement 过低或站点数据残留导致, 试试清掉本站点数据后重试, 或换设备 / 浏览器`,
+    reason: `浏览器持续返回 permanently-removed.invalid（已尝试 ${SUBSCRIBE_ATTEMPTS_MAX} 次）— 可能是由于站点参与度 (Site Engagement) 过低或浏览器内部数据残留导致。请尝试清理站点数据后重试，或更换设备/浏览器`,
   };
 }
