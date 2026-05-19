@@ -992,6 +992,10 @@ async function callLike520LLM<T>(opts: CallOptions<T>): Promise<T> {
                         { role: 'user', content: userPrompt },
                     ],
                     temperature: opts.temperature,
+                    // 之前没设 max_tokens —— Claude 类 provider 默认 4096/8192 token，
+                    // 信件 900-1300 中文字 + JSON 包装会直接被截断（中文 1 字 ≈ 2-3 token）。
+                    // 拉到 32000 把上限堆死，让信能完整写完。
+                    max_tokens: 32000,
                 }),
             });
 
