@@ -865,44 +865,55 @@ function toLines(v: any): string[] | null {
 }
 
 function validateCallA(parsed: any): parsed is Like520CallAResult {
-    if (!parsed || typeof parsed !== 'object') return false;
+    const fail = (reason: string, extra?: any) => {
+        console.warn('[520][CallA][validate] FAIL:', reason, extra ?? '');
+        return false;
+    };
+    if (!parsed || typeof parsed !== 'object') return fail('not an object');
     const rf = parsed.relation_frame;
-    if (!rf || typeof rf.type !== 'string' || typeof rf.frame_note !== 'string') return false;
-    if (!['same_space', 'long_distance', 'different_world', 'other'].includes(rf.type)) return false;
+    if (!rf || typeof rf.type !== 'string' || typeof rf.frame_note !== 'string') return fail('relation_frame shape', rf);
+    if (!['same_space', 'long_distance', 'different_world', 'other'].includes(rf.type)) return fail('relation_frame.type', rf.type);
 
     // opening / reveal_transition / uncovered_line / touch_lines 宽容化
     const openingLines = toLines(parsed.opening);
-    if (!openingLines) return false;
+    if (!openingLines) return fail('opening empty/invalid');
     parsed.opening = openingLines;
 
     const revealLines = toLines(parsed.reveal_transition);
-    if (!revealLines) return false;
+    if (!revealLines) return fail('reveal_transition empty/invalid');
     parsed.reveal_transition = revealLines;
 
     const uncoveredLines = toLines(parsed.uncovered_line);
-    if (!uncoveredLines) return false;
+    if (!uncoveredLines) return fail('uncovered_line empty/invalid');
     parsed.uncovered_line = uncoveredLines;
 
     const touchLines = toLines(parsed.touch_lines);
-    if (!touchLines || touchLines.length < 3) return false;
+    if (!touchLines || touchLines.length < 3) return fail('touch_lines too few', touchLines?.length);
     parsed.touch_lines = touchLines;
 
     // tucao_responses 三个 key 都规整为 string[]
     const tr = parsed.tucao_responses;
-    if (!tr || typeof tr !== 'object') return false;
+    if (!tr || typeof tr !== 'object') return fail('tucao_responses missing');
     for (const k of ['becamesmall', 'cute', 'yangcheng_meta'] as const) {
         const lines = toLines(tr[k]);
-        if (!lines) return false;
+        if (!lines) return fail(`tucao_responses.${k} empty/invalid`, tr[k]);
         tr[k] = lines;
     }
 
-    if (!Array.isArray(parsed.anchors) || parsed.anchors.length === 0) return false;
-    for (const a of parsed.anchors) {
-        if (!a || typeof a.scene !== 'string' || typeof a.is_photo_anchor !== 'boolean') return false;
-        if (typeof a.item_label !== 'string' || !a.item_label.trim()) return false;
-        if (typeof a.item_icon !== 'string' || !a.item_icon.trim()) return false;
+    if (!Array.isArray(parsed.anchors) || parsed.anchors.length === 0) return fail('anchors not array or empty');
+    for (let i = 0; i < parsed.anchors.length; i++) {
+        const a = parsed.anchors[i];
+        if (!a) return fail(`anchors[${i}] null`);
+        if (typeof a.scene !== 'string') return fail(`anchors[${i}].scene not string`, a.scene);
+        // is_photo_anchor 宽容化：缺失或非 boolean 时默认 false（最后一个再统一强制为 true）
+        if (typeof a.is_photo_anchor !== 'boolean') {
+            console.warn(`[520][CallA][validate] anchors[${i}].is_photo_anchor=${JSON.stringify(a.is_photo_anchor)} → 默认 false`);
+            a.is_photo_anchor = false;
+        }
+        if (typeof a.item_label !== 'string' || !a.item_label.trim()) return fail(`anchors[${i}].item_label empty`, a.item_label);
+        if (typeof a.item_icon !== 'string' || !a.item_icon.trim()) return fail(`anchors[${i}].item_icon empty`, a.item_icon);
         const dlg = toLines(a.dialogue);
-        if (!dlg) return false;
+        if (!dlg) return fail(`anchors[${i}].dialogue empty/invalid`);
         a.dialogue = dlg;
         // user_action_options：宽容化 - 缺失或不合法时给一个 fallback（避免硬挂）
         const opts = toLines(a.user_action_options);
@@ -912,11 +923,22 @@ function validateCallA(parsed: any): parsed is Like520CallAResult {
             a.user_action_options = opts.slice(0, 3);
         }
     }
+    // 最后一个 anchor 必须是心愿锚点：如果 LLM 忘了标，自动强制为 true（位置语义已经决定了它的身份）
     const last = parsed.anchors[parsed.anchors.length - 1];
-    if (!last.is_photo_anchor) return false;
+    if (!last.is_photo_anchor) {
+        console.warn('[520][CallA][validate] 最后一个 anchor 没标 is_photo_anchor=true → 强制设为 true');
+        last.is_photo_anchor = true;
+    }
+    // 同时把前面被错标为 true 的清掉（如果存在）
+    for (let i = 0; i < parsed.anchors.length - 1; i++) {
+        if (parsed.anchors[i].is_photo_anchor) {
+            console.warn(`[520][CallA][validate] anchors[${i}] 被错标为 is_photo_anchor=true → 清为 false（只有最后一个能是）`);
+            parsed.anchors[i].is_photo_anchor = false;
+        }
+    }
 
     const e = parsed.ending;
-    if (!e || typeof e.title !== 'string' || typeof e.description !== 'string') return false;
+    if (!e || typeof e.title !== 'string' || typeof e.description !== 'string') return fail('ending shape', e);
     return true;
 }
 
