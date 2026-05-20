@@ -5,7 +5,7 @@ import { DB } from '../utils/db';
 import { RealtimeContextManager } from '../utils/realtimeContext';
 import type { HotNewsSnapshot, HotNewsItem } from '../types';
 
-const SLOT_WINDOW = ['00:00–08:00', '08:00–16:00', '16:00–24:00'];
+const SLOT_WINDOW = ['00:00–04:00', '04:00–08:00', '08:00–12:00', '12:00–16:00', '16:00–20:00', '20:00–24:00'];
 
 const HotNewsApp: React.FC = () => {
     const { closeApp, realtimeConfig, addToast } = useOS();
@@ -90,7 +90,7 @@ const HotNewsApp: React.FC = () => {
                         onClick={forceRefresh}
                         disabled={loading}
                         className="ml-auto p-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform disabled:opacity-40"
-                        title="刷新本时段"
+                        title="真·刷新（强制重新拉取本时段）"
                     >
                         <ArrowClockwise size={20} weight="bold" className={`text-stone-700 ${loading ? 'animate-spin' : ''}`} />
                     </button>
@@ -172,7 +172,7 @@ const HotNewsApp: React.FC = () => {
 
                 {snapshot && (
                     <p className="text-center text-[10px] text-stone-400 mt-6 tracking-wide">
-                        — 数据来自 hot_news（orz.ai）多平台热榜 · 每日早/午/晚各更新一次 —
+                        — 数据来自 hot_news（orz.ai）多平台热榜 · 每天 6 个时段自动更新 · 点右上角可手动真·刷新 —
                     </p>
                 )}
             </div>

@@ -227,11 +227,11 @@ export const RealtimeContextManager = {
         return final;
     },
 
-    // 一天分 3 段：0-8 早间 / 8-16 午间 / 16-24 晚间。slot = floor(hour/8)
+    // 一天分 6 段（每 4 小时）：0-4 凌晨 / 4-8 清晨 / 8-12 上午 / 12-16 午后 / 16-20 傍晚 / 20-24 夜间。slot = floor(hour/4)
     getHotNewsSlot: (d: Date = new Date()): { id: string; date: string; slot: number; label: string } => {
-        const slot = Math.min(2, Math.floor(d.getHours() / 8));
+        const slot = Math.min(5, Math.floor(d.getHours() / 4));
         const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        const label = ['早间', '午间', '晚间'][slot];
+        const label = ['凌晨', '清晨', '上午', '午后', '傍晚', '夜间'][slot];
         return { id: `${date}#${slot}`, date, slot, label };
     },
 
