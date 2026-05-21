@@ -10,11 +10,13 @@ import { RealtimeContextManager, NotionManager, FeishuManager, defaultRealtimeCo
 import { isScheduleFeatureOn } from './scheduleGenerator';
 
 // 群活动注入专用：把一条群消息压成"适合塞进别人私聊背景"的短文本。
-// 关键：emoji / image / 各类卡片的 content 是 URL 或 base64 data URI——
-// 表情包导入时走 readAsDataURL，单张就可能几十 KB。若原样内联进每位成员的
-// 私聊 system prompt，会把上下文撑爆（实测一个群可把私聊 prompt 顶到 8w+ 字符）。
-// 这里与 buildMessageHistory 的富类型处理对齐：只内联纯文本，其余一律占位符，
-// 并对超长文本截断兜底。
+// 关键：image 消息的 content 是 base64（群里发图走 processImage 压成 JPEG，单张几十 KB），
+// 卡片是大段 JSON，emoji 是图床 URL——这些原样内联进每位成员的私聊 system prompt
+// 都是纯噪声，base64 图片更会把上下文直接撑爆（几张群图就能顶到 8w+ 字符，
+// 解散群后该角色私聊上下文从 ~10w 掉回 ~3w 即由此而来）。
+// 注意：私聊自己的历史不会有这个问题，buildMessageHistory 把图片走 image_url 结构化字段、
+// 文本里只留 [User sent an image] 标记；这里只是把同样的"不要把媒体当文本塞"对齐到群注入。
+// 处理方式：只内联纯文本（超长截断），其余一律占位符。
 const GROUP_MSG_TEXT_CAP = 500;
 function summarizeGroupMsgContent(m: Message): string {
     const meta = (m.metadata as any) || {};

@@ -736,8 +736,9 @@ ${recentPrivate || '(暂无私聊)'}
                 if (m.role === 'assistant') {
                     name = characters.find(c => c.id === m.charId)?.name || '未知';
                 }
-                // emoji 的 content 是 URL/base64 data URI（导入走 readAsDataURL，单张可达几十 KB），
-                // 不能内联进 prompt，否则群上下文同样会被表情包撑爆；卡片等富类型也不内联原始 content。
+                // image 的 content 是 base64（processImage 压的 JPEG），emoji 是图床 URL——
+                // 都不能当文本内联进 prompt：base64 图片会把群上下文撑爆，URL 则是纯噪声。
+                // 卡片等富类型同理只留占位符。
                 const rawText = typeof m.content === 'string' ? m.content : '';
                 const content = m.type === 'image' ? '[图片]'
                     : m.type === 'emoji' ? '[表情包]'
