@@ -416,6 +416,9 @@ export async function applyAssistantPostProcessing(
     if (!skipSecondPassLLM && recallMatch) {
         const year = recallMatch[1];
         const month = recallMatch[2];
+        // 模型常把 [[RECALL]] 指令和本轮正文写在同一条回复里。先留底 (去掉所有 RECALL 标签后的正文),
+        // 万一下面的二轮 LLM 吐空 / 只剩标签, 可以回退到这段正文, 避免"只闪了下召回状态、本轮回复整段丢失"。
+        const recallFallbackBody = aiContent.replace(/\[\[RECALL:\s*\d{4}[-/年]\d{1,2}\]\]/g, '').trim();
         const rr = await runRecall({ year, month }, agenticCtx);
 
         if (rr.ok && rr.alreadyActive) {
@@ -435,6 +438,11 @@ export async function applyAssistantPostProcessing(
                 addToast(`已调用 ${year}-${month} 详细记忆`, 'info');
             } catch (recallErr: any) {
                 console.error('Recall API failed:', recallErr.message);
+            }
+            // 二轮没产出可见正文 → 回退到模型本轮已写好的正文, 至少把本轮回复展示出来。
+            if (!aiContent.replace(/\[\[RECALL:\s*\d{4}[-/年]\d{1,2}\]\]/g, '').trim() && recallFallbackBody) {
+                console.log('♻️ [Recall] 二轮回复为空, 回退到本轮原始正文');
+                aiContent = recallFallbackBody;
             }
         } else {
             // !rr.ok && rr.reason === 'no_logs' — matches original "set status, no-op, clear" path
@@ -1555,8 +1563,8 @@ export async function applyAssistantPostProcessing(
     aiContent = ChatParser.sanitize(aiContent, { keepCitations: true });
     aiContent = aiContent.replace(/\[\[INNER_STATE:\s*[\s\S]*?\]\]/g, '').trim();
 
-    // 空内容兜底
-    if (!aiContent.trim() && (searchMatch || readDiaryMatch || fsReadDiaryMatch)) {
+    // 空内容兜底 — recall 同样会走二轮重生, 漏了它会导致召回后本轮回复整段消失
+    if (!aiContent.trim() && (recallMatch || searchMatch || readDiaryMatch || fsReadDiaryMatch)) {
         aiContent = '嗯...';
     }
 
