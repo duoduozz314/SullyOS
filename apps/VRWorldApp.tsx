@@ -2045,6 +2045,7 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
     const [log, setLog] = useState<VRApiCall[]>([]);
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState<string | null>(null);
+    const [presetsOpen, setPresetsOpen] = useState(false);   // 折叠「保存的预设」长列表
 
     useEffect(() => {
         void getVRApi().then(setVr);
@@ -2113,20 +2114,36 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
                 </button>
                 {apiPresets.length === 0 ? (
                     <p className="text-[10.5px] text-white/35 px-1 py-1.5">「设置」里还没有保存的 API 预设。去设置里保存几个模型，这里就能选。</p>
-                ) : apiPresets.map(p => {
-                    const on = sameAs(p.config);
+                ) : (() => {
+                    const activePreset = apiPresets.find(p => sameAs(p.config));
+                    const shown = presetsOpen ? apiPresets : (activePreset ? [activePreset] : []);
                     return (
-                        <button key={p.id} onClick={() => choose(p.config)}
-                            className="w-full flex items-center gap-2 rounded-xl p-3 mb-1.5 text-left active:scale-[0.99] transition-transform"
-                            style={{ background: on ? 'rgba(120,180,255,.12)' : 'rgba(255,255,255,.04)', border: `1px solid ${on ? 'rgba(140,180,255,.4)' : 'rgba(255,255,255,.07)'}` }}>
-                            <div className="flex-1 min-w-0">
-                                <div className="text-[12px] text-white/90 font-semibold truncate">{p.name}</div>
-                                <div className="text-[10px] text-white/40 truncate">{p.config.model} · {host(p.config.baseUrl)}</div>
-                            </div>
-                            {on && <span className="text-[10px] text-sky-300 font-bold shrink-0">✓ 使用中</span>}
-                        </button>
+                        <>
+                            <button onClick={() => setPresetsOpen(o => !o)}
+                                className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 mb-1.5 text-left active:bg-white/5"
+                                style={{ border: '1px solid rgba(255,255,255,.07)' }}>
+                                <span className="text-[10.5px] text-white/55">保存的预设</span>
+                                <span className="text-[9.5px] text-white/35 rounded-full px-1.5 leading-tight" style={{ background: 'rgba(255,255,255,.08)' }}>{apiPresets.length}</span>
+                                {!presetsOpen && activePreset && <span className="text-[9.5px] text-sky-300/70 truncate">当前 · {activePreset.name}</span>}
+                                <span className="ml-auto text-[10px] text-white/40">{presetsOpen ? '收起' : '展开'}</span>
+                            </button>
+                            {shown.map(p => {
+                                const on = sameAs(p.config);
+                                return (
+                                    <button key={p.id} onClick={() => choose(p.config)}
+                                        className="w-full flex items-center gap-2 rounded-xl p-3 mb-1.5 text-left active:scale-[0.99] transition-transform"
+                                        style={{ background: on ? 'rgba(120,180,255,.12)' : 'rgba(255,255,255,.04)', border: `1px solid ${on ? 'rgba(140,180,255,.4)' : 'rgba(255,255,255,.07)'}` }}>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-[12px] text-white/90 font-semibold truncate">{p.name}</div>
+                                            <div className="text-[10px] text-white/40 truncate">{p.config.model} · {host(p.config.baseUrl)}</div>
+                                        </div>
+                                        {on && <span className="text-[10px] text-sky-300 font-bold shrink-0">✓ 使用中</span>}
+                                    </button>
+                                );
+                            })}
+                        </>
                     );
-                })}
+                })()}
             </div>
 
             {/* 调用记录 */}
