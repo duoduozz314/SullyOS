@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>大头贴机 · 出件啦 ｜ 520</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -35,7 +35,9 @@
   }
 
   .app { position: relative; z-index: 1; height: 100vh; height: 100dvh;
-    display: flex; flex-direction: column; max-width: 480px; margin: 0 auto; }
+    display: flex; flex-direction: column; max-width: 480px; margin: 0 auto;
+    /* iOS 全屏 PWA 下 iframe 自理安全区：顶让开刘海、底让开 home 条（.panel 已在 padding 里加了 safe-bottom，这里只补 top）。 */
+    padding-top: env(safe-area-inset-top, 0px); }
 
   /* PC 宽屏：两栏布局，左边角色 + 右边面板，互不挤压 */
   @media (min-width: 900px) {

@@ -362,8 +362,6 @@ const SpriteDialogBox: React.FC<SpriteDialogBoxProps> = ({
             className="fixed inset-0 z-[9997] flex flex-col cursor-pointer select-none"
             style={{
                 background: 'linear-gradient(to bottom, #f9a8d4, #fbcfe8, #fce7f3)',
-                paddingTop: 'var(--safe-top)',
-                paddingBottom: 'var(--safe-bottom)',
             }}
             onClick={onClick}
         >
@@ -1426,11 +1424,10 @@ ${answerSummary}
     // 角色选择
     if (phase === 'select') {
         return (
-            <div
-                className="fixed inset-0 z-[9997] bg-gradient-to-b from-amber-50 via-white to-orange-50 flex flex-col animate-fade-in"
-                style={{ paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' }}
-            >
-                <div className="h-16 flex items-center justify-between px-4 border-b border-amber-100 bg-white/80 backdrop-blur-sm shrink-0">
+            <div className="fixed inset-0 z-[9997] bg-gradient-to-b from-amber-50 via-white to-orange-50 flex flex-col animate-fade-in">
+                {/* 顶栏 in-flow 自吃 safe-top（外壳不加 padding，避免渐变背景被挤出色块） */}
+                <div className="h-16 flex items-center justify-between px-4 border-b border-amber-100 bg-white/80 backdrop-blur-sm shrink-0"
+                    style={{ paddingTop: 'var(--safe-top)', boxSizing: 'content-box' }}>
                     <button onClick={onClose} className="p-2 -ml-2 rounded-full hover:bg-amber-50">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
@@ -1483,11 +1480,9 @@ ${answerSummary}
     if (phase === 'quiz') {
         const allAnswered = userAnswers.length > 0 && userAnswers.every(a => a >= 0);
         return (
-            <div
-                className="fixed inset-0 z-[9997] bg-gradient-to-b from-amber-50 via-white to-orange-50 flex flex-col animate-fade-in"
-                style={{ paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' }}
-            >
-                <div className="h-16 flex items-center justify-between px-4 border-b border-amber-100 bg-white/80 backdrop-blur-sm shrink-0">
+            <div className="fixed inset-0 z-[9997] bg-gradient-to-b from-amber-50 via-white to-orange-50 flex flex-col animate-fade-in">
+                <div className="h-16 flex items-center justify-between px-4 border-b border-amber-100 bg-white/80 backdrop-blur-sm shrink-0"
+                    style={{ paddingTop: 'var(--safe-top)', boxSizing: 'content-box' }}>
                     <button onClick={onClose} className="p-2 -ml-2 rounded-full hover:bg-amber-50">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
@@ -1627,12 +1622,10 @@ ${answerSummary}
     // 装饰界面
     if (phase === 'decorate') {
         return (
-            <div
-                className="fixed inset-0 z-[9997] bg-gradient-to-b from-rose-50 via-white to-pink-50 flex flex-col animate-fade-in"
-                style={{ paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' }}
-            >
+            <div className="fixed inset-0 z-[9997] bg-gradient-to-b from-rose-50 via-white to-pink-50 flex flex-col animate-fade-in">
                 {/* Header */}
-                <div className="h-14 flex items-center justify-between px-4 border-b border-rose-100 bg-white/80 backdrop-blur-sm shrink-0">
+                <div className="h-14 flex items-center justify-between px-4 border-b border-rose-100 bg-white/80 backdrop-blur-sm shrink-0"
+                    style={{ paddingTop: 'var(--safe-top)', boxSizing: 'content-box' }}>
                     <button onClick={onClose} className="p-2 -ml-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-500">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
@@ -1862,11 +1855,9 @@ ${answerSummary}
     // 导出界面
     if (phase === 'export') {
         return (
-            <div
-                className="fixed inset-0 z-[9997] bg-gradient-to-b from-amber-50 via-white to-orange-50 flex flex-col animate-fade-in"
-                style={{ paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' }}
-            >
-                <div className="h-14 flex items-center justify-between px-4 border-b border-amber-100 bg-white/80 backdrop-blur-sm shrink-0">
+            <div className="fixed inset-0 z-[9997] bg-gradient-to-b from-amber-50 via-white to-orange-50 flex flex-col animate-fade-in">
+                <div className="h-14 flex items-center justify-between px-4 border-b border-amber-100 bg-white/80 backdrop-blur-sm shrink-0"
+                    style={{ paddingTop: 'var(--safe-top)', boxSizing: 'content-box' }}>
                     <button onClick={() => setPhase('decorate')} className="p-2 -ml-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-500">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
@@ -2012,11 +2003,9 @@ ${answerSummary}
         };
 
         return (
-            <div
-                className="fixed inset-0 z-[9997] bg-gradient-to-b from-amber-50 via-white to-orange-50 flex flex-col animate-fade-in"
-                style={{ paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' }}
-            >
-                <div className="h-14 flex items-center justify-between px-4 border-b border-amber-100 bg-white/80 backdrop-blur-sm shrink-0">
+            <div className="fixed inset-0 z-[9997] bg-gradient-to-b from-amber-50 via-white to-orange-50 flex flex-col animate-fade-in">
+                <div className="h-14 flex items-center justify-between px-4 border-b border-amber-100 bg-white/80 backdrop-blur-sm shrink-0"
+                    style={{ paddingTop: 'var(--safe-top)', boxSizing: 'content-box' }}>
                     <button onClick={onClose} className="p-2 -ml-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-500">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />

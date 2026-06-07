@@ -261,9 +261,10 @@ const LIKE520_CSS = `
   width: 100%;
   height: 100%;
   overflow: hidden;
-  /* iOS 全屏 PWA 安全区：让顶栏/底栏/抽屉等 immersive UI 自动避开刘海和 home 条 */
-  padding-top: var(--safe-top);
-  padding-bottom: var(--safe-bottom);
+  /* 不在这里加 padding-top/bottom safe area：.l520-root 自身有 cream 渐变背景，
+     而内部 .l520-mask / .l520-corner / .l520-ornaments 都是 absolute inset:0，
+     padding 会让它们整体内缩，露出上下两条 cream 色块（选择卡的深棕蒙版尤其明显）。
+     各 phase 内 in-flow 内容由自身留白处理，外壳 fixed inset-0 已覆盖整屏。 */
   font-family: 'Noto Serif SC', 'Cormorant Garamond', serif;
   color: var(--ink);
   background:
@@ -3394,10 +3395,7 @@ export const Like520Session: React.FC<SessionProps> = ({ charId, onClose }) => {
             )}
 
             {phase === 'char_creator' && (
-                <div
-                    className="absolute inset-0"
-                    style={{ paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' }}
-                >
+                <div className="absolute inset-0">
                     <CreatorIframe
                         mode="char"
                         charName={char.name}
@@ -3430,10 +3428,7 @@ export const Like520Session: React.FC<SessionProps> = ({ charId, onClose }) => {
             )}
 
             {phase === 'user_creator' && (
-                <div
-                    className="absolute inset-0"
-                    style={{ paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' }}
-                >
+                <div className="absolute inset-0">
                     <CreatorIframe
                         mode="user"
                         charName={char.name}
