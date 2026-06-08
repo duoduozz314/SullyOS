@@ -34,6 +34,8 @@ interface ChatHeaderShellProps {
     headerDensity?: 'compact' | 'default' | 'airy';
     statusStyle?: 'subtle' | 'pill' | 'dot';
     chromeStyle?: 'soft' | 'flat' | 'floating' | 'pixel';
+    /** 动森彩蛋模式：头部换成木质草绿栏。 */
+    acnh?: boolean;
 }
 
 const COLLAPSED_BUFF_MIN = 2;
@@ -73,6 +75,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
     headerDensity = 'default',
     statusStyle = 'subtle',
     chromeStyle = 'soft',
+    acnh = false,
 }) => {
     const buffs: CharacterBuff[] = activeCharacter.activeBuffs || [];
     const [openBuff, setOpenBuff] = useState<CharacterBuff | null>(null);
@@ -184,6 +187,9 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
     const avatarRadiusClass = avatarShape === 'square' ? 'rounded-sm' : avatarShape === 'rounded' ? 'rounded-xl' : 'rounded-full';
 
     const headerToneClass =
+        acnh
+          ? 'bg-[#b6e08a]/95 backdrop-blur-md border-b-[3px] border-[#7cba4c] shadow-[0_4px_0_rgba(124,186,76,0.3)]'
+          :
         headerStyle === 'gradient'
             ? 'bg-gradient-to-r from-primary/20 via-primary/10 to-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm'
             : headerStyle === 'minimal'

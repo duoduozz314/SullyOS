@@ -45,6 +45,8 @@ interface ChatInputAreaProps {
     inputStyle?: 'default' | 'rounded' | 'flat' | 'wechat' | 'ios' | 'telegram' | 'discord' | 'pixel';
     sendButtonStyle?: 'circle' | 'pill' | 'minimal';
     chromeStyle?: 'soft' | 'flat' | 'floating' | 'pixel';
+    /** 动森彩蛋模式：输入栏换成木质草绿圆角。 */
+    acnh?: boolean;
 }
 
 const ChatInputArea: React.FC<ChatInputAreaProps> = ({
@@ -63,6 +65,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     inputStyle = 'default',
     sendButtonStyle = 'circle',
     chromeStyle = 'soft',
+    acnh = false,
 }) => {
     const chatImageInputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -259,7 +262,9 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 
     const isDiscordStyle = inputStyle === 'discord';
     const isPixelStyle = inputStyle === 'pixel' || chromeStyle === 'pixel';
-    const shellClass = chromeStyle === 'pixel'
+    const shellClass = acnh
+        ? 'bg-[#eaf6d4]/95 backdrop-blur-md border-t-[3px] border-[#7cba4c] shadow-[0_-4px_0_rgba(124,186,76,0.2)]'
+        : chromeStyle === 'pixel'
         ? 'bg-[#eadfce] border-t-[3px] border-[#8f674a] shadow-[0_-4px_0_rgba(123,90,64,0.15)]'
         : chromeStyle === 'flat'
           ? 'bg-white border-t border-slate-200 shadow-none'
@@ -272,6 +277,9 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
           ? 'w-11 h-11 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-200 hover:bg-slate-700 transition-colors'
           : 'w-11 h-11 shrink-0 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors';
     const inputWrapClass =
+        acnh
+            ? 'bg-white border-2 border-[#9ed25f] rounded-full'
+            :
         inputStyle === 'rounded'
             ? 'bg-slate-100 rounded-full'
             : inputStyle === 'flat'
