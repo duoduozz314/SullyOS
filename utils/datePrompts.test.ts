@@ -79,6 +79,16 @@ describe('DatePrompts.buildSessionPayload', () => {
         expect(sys).toContain('不要写心理活动，多写对话。');
     });
 
+    it('细节深挖默认开启：方法块进 system，聚焦线索进末尾 note；关闭后两者都消失', async () => {
+        const on = await DatePrompts.buildSessionPayload(baseInput(makeChar()));
+        expect(sysOf(on.messages)).toContain('素材永远比你以为的多');
+        expect(on.messages[on.messages.length - 1].content).toContain('本轮线索');
+
+        const off = await DatePrompts.buildSessionPayload(baseInput(makeChar({ dateStyleConfig: { digDeeper: false } })));
+        expect(sysOf(off.messages)).not.toContain('素材永远比你以为的多');
+        expect(off.messages[off.messages.length - 1].content).not.toContain('本轮线索');
+    });
+
     it('消息结构为 [system, ...history, user]，末尾带 System Note；reroll 的 note 不同', async () => {
         const send = await DatePrompts.buildSessionPayload(baseInput(makeChar()));
         expect(send.messages[0].role).toBe('system');

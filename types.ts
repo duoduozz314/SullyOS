@@ -413,6 +413,8 @@ export interface DateStyleConfig {
   style?: string;
   /** 叙事人称：third-name=「B看着A」 third-you=「B看着你」 first-you=「我看着你」；缺省 = 不注入人称指令 */
   pov?: 'third-name' | 'third-you' | 'first-you';
+  /** 细节深挖引导：教模型从任意输入里挖素材 + 每轮轮换聚焦线索，对冲"没话找话"式的模型八股；缺省 = 开启 */
+  digDeeper?: boolean;
   /** 自定义补充文风要求，原样追加进风格块 */
   extra?: string;
 }

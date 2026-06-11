@@ -199,6 +199,49 @@ ${extra}
 `;
 };
 
+// ─────────────────────────────────────────────────────────────
+// 细节深挖（反"模型八股"的正向方案）
+//
+// 各家模型都有自己的高频套话（"极其""不是X而是Y"之类），但静态黑名单治不了：
+// 一是每家八股不同打不完，二是把禁语写进提示词反而会激活它（粉色大象效应）。
+// 这里走正向路线：八股是"没话找话"时的填充物，所以教模型怎么从任意输入里
+// 挖到具体素材（常驻方法块），并每轮随机注入一条聚焦线索（轮换的注意力方向
+// 让相邻回复天然有差异，上下文自我模仿的雪球滚不起来）。全程不提任何禁语。
+// ─────────────────────────────────────────────────────────────
+
+const isDigDeeperOn = (config?: DateStyleConfig): boolean => config?.digDeeper !== false;
+
+const DIG_DEEPER_BLOCK = `### 💎 素材永远比你以为的多（深挖，别填充）
+对方哪怕随口一句话，都至少藏着这些可以接的线：
+1. **ta的用词**——为什么是这个词？换个人不会这么说。
+2. **ta怎么说的**——语速、音量、说话时手在干什么、眼睛看哪。
+3. **ta没说的**——这句话省略了什么？和ta平时的样子比，哪里不一样？
+4. **现场**——此刻的光线、声音、桌上的东西，随便一样都能参与进互动。
+5. **你们的过去**——这句话让你想起哪件只有你们知道的事？
+6. **你自己**——它在你心里激起的第一反应是什么？你压下去了，还是说了出来？
+
+比如对方只说了句"有点累"，能接的就有：累的是身体还是别的；ta说这话时把包放下的动作；你上次见ta累成这样是什么时候；要不要把窗边那杯还温着的水推过去。
+
+规则：
+- 每一轮只挑**一两条线**往深处走，写透它。不要每条都碰——什么都写等于什么都没写。
+- 觉得"没什么可写"的时候，恰恰说明该回到上面的清单里找。空泛的感慨和万能句式都是没话找话，宁可写一个具体的小动作。
+`;
+
+/** 每轮随机注入一条，把注意力推向不同的具体方向；reroll 时另抽一条换切入角度 */
+export const DIG_FOCUS_HINTS = [
+    '从对方刚才的用词里挑一个词，作为这一轮回应的起点',
+    '让场景里的一件具体物品参与到这一轮互动里',
+    '写一个克制的身体细节——距离、姿态、或一个没完成的动作',
+    '把对方这句话和你们的一段过去连起来（只有你们知道的事）',
+    '这一轮重点回应对方"怎么说"而不是"说了什么"——语气、停顿、视线',
+    '写一个你心里闪过但没说出口的念头，让它影响你的下一句话',
+    '留意对方没说出口的部分，回应那个空白',
+    '让此刻的环境（光线、声音、温度）染进你的语气里',
+];
+
+const pickFocusHint = (): string =>
+    DIG_FOCUS_HINTS[Math.floor(Math.random() * DIG_FOCUS_HINTS.length)];
+
 const getDateEmotions = (char: CharacterProfile): string[] =>
     [...REQUIRED_DATE_EMOTIONS, ...(char.customDateSprites || [])];
 
@@ -252,6 +295,7 @@ const buildVNModeBlock = (char: CharacterProfile, userName: string): string => {
     const preset = getStylePreset(styleConfig);
     const povBlock = buildPovBlock(styleConfig, char.name, userName);
     const extraBlock = buildExtraStyleBlock(styleConfig);
+    const digBlock = isDigDeeperOn(styleConfig) ? `${DIG_DEEPER_BLOCK}\n` : '';
     return `### [Visual Novel Mode: 视觉小说脚本模式]
 你正在与用户进行**面对面**的互动。这不是聊天，是一场真实的见面。
 
@@ -263,7 +307,7 @@ const buildVNModeBlock = (char: CharacterProfile, userName: string): string => {
 
 ${preset.block}
 
-${povBlock}${extraBlock}### 场景上下文
+${digBlock}${povBlock}${extraBlock}### 场景上下文
 1. **Time**: 当前时间 ${timeStr}。
 2. **Location**: 你们现在**面对面**。
 3. **Context**: 参考历史记录。如果刚刚才看到开场白（Opening），请自然接话。
@@ -378,9 +422,11 @@ ${extraBlock ? `\n${extraBlock}` : ''}`;
         const systemPrompt = ContextBuilder.buildCoreContext(char, userProfile)
             + buildVNModeBlock(char, userProfile?.name || '');
 
+        // 每轮轮换的聚焦线索：把注意力推向不同的具体方向，相邻回复天然有差异
+        const focusLine = isDigDeeperOn(char.dateStyleConfig) ? ` 本轮线索：${pickFocusHint()}。` : '';
         const note = variant === 'send'
-            ? `(System Note: 严格遵守 VN 格式。每一行都要以 [emotion] 开头，根据内容逐行切换情绪标签，不要整段只用同一个。叙述行写出场景的呼吸感，不要罗列动作。)`
-            : `(System Note: Reroll. 用不同的角度重写。依然严格遵守 VN 格式：每一行以 [emotion] 开头并逐行切换情绪，叙述行保持场景的呼吸感，不要罗列动作。)`;
+            ? `(System Note: 严格遵守 VN 格式。每一行都要以 [emotion] 开头，根据内容逐行切换情绪标签，不要整段只用同一个。叙述行写出场景的呼吸感，不要罗列动作。${focusLine})`
+            : `(System Note: Reroll. 换一个切入角度重写，不要复用上一版的展开思路。依然严格遵守 VN 格式：每一行以 [emotion] 开头并逐行切换情绪，叙述行保持场景的呼吸感，不要罗列动作。${focusLine})`;
 
         return {
             messages: [

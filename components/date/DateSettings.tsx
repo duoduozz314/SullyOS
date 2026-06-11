@@ -306,6 +306,20 @@ const DateSettings: React.FC<DateSettingsProps> = ({ char, onBack }) => {
                         </div>
                     </div>
 
+                    {/* 细节深挖引导 */}
+                    <div className="mb-5 flex items-center justify-between">
+                        <div className="pr-4">
+                            <label className="text-[11px] text-slate-500 font-bold block">细节深挖引导</label>
+                            <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">教 AI 从任何一句话里挖出可写的细节，并每轮给一条不同的聚焦线索，减少空话和模型口癖。</p>
+                        </div>
+                        <button
+                            onClick={() => patchStyleConfig({ digDeeper: styleConfig.digDeeper === false ? undefined : false })}
+                            className={`w-12 h-7 rounded-full transition-colors relative shrink-0 ${styleConfig.digDeeper !== false ? 'bg-primary' : 'bg-slate-200'}`}
+                        >
+                            <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform ${styleConfig.digDeeper !== false ? 'translate-x-5' : 'translate-x-0.5'}`}></div>
+                        </button>
+                    </div>
+
                     {/* 自定义补充 */}
                     <div>
                         <label className="text-[11px] text-slate-500 font-bold mb-2 block">自定义补充（可选）</label>
