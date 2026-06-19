@@ -6,11 +6,11 @@ import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import { safeResponseJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
-import PersonaSim, { LifeLog } from './PersonaSim';
+import PersonaSim, { LifeLog, generatePersonaScript, SimState } from './PersonaSim';
 import {
     User, Phone, ChatCircleDots, ChatCircle, ShoppingBag, Hamburger, Compass, GearSix,
     Plus, SignOut, CaretLeft, CaretRight, Cloud, ImagesSquare, LockSimple, Package,
-    Storefront, Heart, ArrowsClockwise, Tray, DotsThree, ClockCounterClockwise
+    Storefront, Heart, ArrowsClockwise, Tray, DotsThree, ClockCounterClockwise, Sparkle
 } from '@phosphor-icons/react';
 
 type LayoutId = NonNullable<PhoneCustomApp['layout']>;
@@ -43,6 +43,9 @@ const CheckPhone: React.FC = () => {
     const [newAppColor, setNewAppColor] = useState('#8b9cff');
     const [newAppPrompt, setNewAppPrompt] = useState('');
     const [newAppLayout, setNewAppLayout] = useState<NonNullable<PhoneCustomApp['layout']>>('generic');
+
+    // 人格模拟：演出脚本在 CheckPhone 层后台生成，生成期间用户可在「糯米机」里别处逛
+    const [sim, setSim] = useState<SimState>({ status: 'idle' });
 
     // Swipe tracking for paging
     const touchStartX = useRef<number | null>(null);
@@ -362,6 +365,24 @@ Format:
             addToast('续写失败', 'error');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    // ----- 人格模拟：后台生成（生成期间用户可离开本 App 去别处逛） -----
+    const runSim = async (m: 'daily' | 'event', t: string) => {
+        if (!targetChar) return;
+        if (!apiConfig.apiKey) { addToast('请先配置 API', 'error'); return; }
+        setSim({ status: 'loading', mode: m, theme: t });
+        try {
+            const generated = await generatePersonaScript({
+                char: targetChar, userProfile, apiConfig: apiConfig as any, mode: m, theme: t,
+            });
+            setSim({ status: 'ready', mode: m, theme: t, script: generated });
+            addToast('演出已就绪', 'success');
+        } catch (e) {
+            console.error(e);
+            setSim({ status: 'error', mode: m, theme: t });
+            addToast('演出生成失败，请重试', 'error');
         }
     };
 
@@ -1154,13 +1175,32 @@ Format:
                     {activeAppId === 'waimai' && renderFood()}
                     {activeAppId === 'social' && renderMoments()}
                     {activeAppId === 'persona' && targetChar && (
-                        <PersonaSim targetChar={targetChar} onExit={() => setActiveAppId('home')} openLifeLog={() => setActiveAppId('lifelog')} />
+                        <PersonaSim targetChar={targetChar} onExit={() => setActiveAppId('home')} openLifeLog={() => setActiveAppId('lifelog')}
+                            sim={sim} onStart={runSim} onConsumed={() => setSim({ status: 'idle' })} />
                     )}
                     {activeAppId === 'lifelog' && targetChar && (
                         <LifeLog targetChar={targetChar} onBack={() => setActiveAppId('home')} />
                     )}
                     {customActive && renderCustomApp(customActive)}
                 </>
+            )}
+
+            {/* 人格模拟后台生成 · 悬浮状态条（在 persona 演出界面内不显示） */}
+            {activeAppId !== 'persona' && sim.status === 'loading' && (
+                <button onClick={() => setActiveAppId('persona')}
+                    className="absolute bottom-24 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#1c1830]/90 backdrop-blur-xl border border-[#b89bff]/30 shadow-[0_8px_30px_rgba(0,0,0,0.5)] active:scale-95 transition animate-slide-up">
+                    <span className="w-3.5 h-3.5 border-2 border-[#b89bff]/40 border-t-[#b89bff] rounded-full animate-spin" />
+                    <span className="text-[11.5px] text-white/85">演出生成中 · 「{sim.theme}」</span>
+                </button>
+            )}
+            {activeAppId !== 'persona' && sim.status === 'ready' && (
+                <button onClick={() => setActiveAppId('persona')}
+                    className="absolute bottom-24 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2.5 px-5 py-3 rounded-2xl border border-[#b89bff]/40 shadow-[0_8px_30px_rgba(0,0,0,0.55)] active:scale-95 transition animate-notif-pop"
+                    style={{ background: 'linear-gradient(120deg, rgba(184,155,255,0.95), rgba(140,110,224,0.9))' }}>
+                    <Sparkle size={16} weight="fill" className="text-white" />
+                    <span className="text-[12.5px] font-semibold text-white">演出已就绪 · 进入</span>
+                    <CaretRight size={13} weight="bold" className="text-white/90" />
+                </button>
             )}
 
             {/* Create App Modal */}

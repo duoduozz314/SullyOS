@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { CharacterProfile, PhoneSimLog, CharacterBuff } from '../types';
+import { CharacterProfile, PhoneSimLog, CharacterBuff, UserProfile } from '../types';
 import { ContextBuilder } from '../utils/context';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
@@ -22,6 +22,7 @@ interface Beat {
     kind: BeatKind;
     monologue?: string;
     pace?: 1 | 2 | 3;
+    vibe?: 'calm' | 'chaotic' | 'happy' | 'anxious' | 'numb' | 'tender';
     notif?: { app: string; title: string; body: string; tone?: 'push' | 'sms' | 'system' | 'flashback' };
     app?: {
         name: string;
@@ -47,10 +48,20 @@ interface SimScript {
     buff?: { name?: string; label: string; emoji?: string; color?: string; intensity?: 1 | 2 | 3; description?: string };
 }
 
+export interface SimApiConfig { apiKey: string; baseUrl: string; model: string; }
+export type SimState =
+    | { status: 'idle' }
+    | { status: 'loading'; mode: 'daily' | 'event'; theme: string }
+    | { status: 'ready'; mode: 'daily' | 'event'; theme: string; script: SimScript }
+    | { status: 'error'; mode: 'daily' | 'event'; theme: string };
+
 interface Props {
     targetChar: CharacterProfile;
     onExit: () => void;
     openLifeLog: () => void;
+    sim: SimState;
+    onStart: (mode: 'daily' | 'event', theme: string) => void;
+    onConsumed: () => void;
 }
 
 const DAILY = ['平凡的周二', '周末宅家', '深夜失眠', '上班的一天', '放学后的傍晚'];
@@ -95,18 +106,51 @@ const Typewriter: React.FC<{ drafts: string[]; sent?: string | null; className?:
     };
 
 // ============================================================
+//  BACKGROUND GENERATOR (runs at CheckPhone level so it survives navigation)
+// ============================================================
+export async function generatePersonaScript(opts: {
+    char: CharacterProfile; userProfile: UserProfile; apiConfig: SimApiConfig;
+    mode: 'daily' | 'event'; theme: string;
+}): Promise<SimScript> {
+    const { char, userProfile, apiConfig, mode, theme } = opts;
+    await injectMemoryPalace(char, undefined, theme, userProfile.name);
+    const context = ContextBuilder.buildCoreContext(char, userProfile, true, char.memoryPalaceInjection);
+    const msgs = await DB.getMessagesByCharId(char.id);
+    const recent = msgs.slice(-50).map(m => {
+        const who = m.role === 'user' ? userProfile.name : char.name;
+        const c = m.type === 'text' ? m.content : `[${m.type}]`;
+        return `${who}: ${c}`;
+    }).join('\n');
+    const firstTs = msgs.find(m => typeof m.timestamp === 'number')?.timestamp;
+    const acquaintance = describeAcquaintance(firstTs, userProfile.name, char.name);
+    const prompt = buildDirectorPrompt(context, recent, mode, theme, char.name, acquaintance);
+    const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+        body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }], temperature: 0.95, max_tokens: 16000 }),
+    });
+    if (!res.ok) throw new Error('API');
+    const data = await safeResponseJson(res);
+    const parsed = parseScript(data.choices[0].message.content);
+    if (!parsed || !parsed.beats?.length) throw new Error('parse');
+    if (parsed.beats[parsed.beats.length - 1].kind !== 'end') {
+        parsed.beats.push({ kind: 'end', time: parsed.beats[parsed.beats.length - 1].time });
+    }
+    return parsed;
+}
+
+// ============================================================
 //  COMPONENT
 // ============================================================
-const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog }) => {
-    const { apiConfig, userProfile, updateCharacter, addToast } = useOS();
+const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onStart, onConsumed }) => {
+    const { updateCharacter, addToast } = useOS();
 
-    const [phase, setPhase] = useState<'select' | 'loading' | 'play' | 'end'>('select');
+    const [phase, setPhase] = useState<'idle' | 'play' | 'end'>('idle');
     const [mode, setMode] = useState<'daily' | 'event'>('daily');
     const [theme, setTheme] = useState('');
     const [script, setScript] = useState<SimScript | null>(null);
     const [idx, setIdx] = useState(0);
     const [autoplay, setAutoplay] = useState(false);
-    const [loadStage, setLoadStage] = useState('');
     const savedRef = useRef(false);
     const ffTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -125,58 +169,22 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog }) => {
     const screenBeat = screenIdx >= 0 ? beats[screenIdx] : undefined;
     const isOverlay = beat?.kind === 'notification' || beat?.kind === 'thought';
 
-    // ----- generation -----
-    const start = async (selectedTheme: string) => {
-        const t = selectedTheme.trim();
-        if (!t) { addToast('请选择或输入体验内容', 'error'); return; }
-        if (!apiConfig.apiKey) { addToast('请先配置 API', 'error'); return; }
-        setTheme(t);
-        setPhase('loading');
-        savedRef.current = false;
-
-        try {
-            setLoadStage('正在读取记忆…');
-            await injectMemoryPalace(targetChar, undefined, t, userProfile.name);
-            const context = ContextBuilder.buildCoreContext(targetChar, userProfile, true, targetChar.memoryPalaceInjection);
-
-            setLoadStage('正在回放最近的对话…');
-            const msgs = await DB.getMessagesByCharId(targetChar.id);
-            const recent = msgs.slice(-50).map(m => {
-                const who = m.role === 'user' ? userProfile.name : targetChar.name;
-                const c = m.type === 'text' ? m.content : `[${m.type}]`;
-                return `${who}: ${c}`;
-            }).join('\n');
-
-            // 认识时长护栏：从最早一条消息推算，给 AI 判断闪回是否合理 / 用什么时间口径
-            const firstTs = msgs.find(m => typeof m.timestamp === 'number')?.timestamp;
-            const acquaintance = describeAcquaintance(firstTs, userProfile.name, targetChar.name);
-
-            setLoadStage('正在生成这一天…');
-            const prompt = buildDirectorPrompt(context, recent, mode, t, targetChar.name, acquaintance);
-
-            const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }], temperature: 0.95, max_tokens: 16000 }),
-            });
-            if (!res.ok) throw new Error('API');
-            const data = await safeResponseJson(res);
-            const parsed = parseScript(data.choices[0].message.content);
-            if (!parsed || !parsed.beats?.length) throw new Error('parse');
-
-            // ensure an explicit end beat
-            if (parsed.beats[parsed.beats.length - 1].kind !== 'end') {
-                parsed.beats.push({ kind: 'end', time: parsed.beats[parsed.beats.length - 1].time });
-            }
-            setScript(parsed);
-            setIdx(0);
-            setPhase('play');
-        } catch (e) {
-            console.error(e);
-            addToast('演出生成失败，请重试', 'error');
-            setPhase('select');
-        }
+    // ----- kick off background generation (runs in CheckPhone) -----
+    const requestStart = (m: 'daily' | 'event', t: string) => {
+        const trimmed = t.trim();
+        if (!trimmed) { addToast('请选择或输入体验内容', 'error'); return; }
+        setMode(m); setTheme(trimmed);
+        onStart(m, trimmed);
     };
+
+    // ----- consume a ready script (generated in background) and start playing -----
+    useEffect(() => {
+        if (phase === 'idle' && sim.status === 'ready') {
+            setMode(sim.mode); setTheme(sim.theme);
+            setScript(sim.script); setIdx(0); savedRef.current = false; setPhase('play');
+            onConsumed();
+        }
+    }, [sim, phase, onConsumed]);
 
     // ----- persistence on reaching the end -----
     const persist = useCallback(async () => {
@@ -276,7 +284,7 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog }) => {
     // ========================================================
     //  RENDER: SELECT
     // ========================================================
-    if (phase === 'select') {
+    if (phase === 'idle' && (sim.status === 'idle' || sim.status === 'error')) {
         return (
             <Shell wallpaper={wallpaper}>
                 <TopBar onBack={onExit} right={
@@ -311,7 +319,7 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog }) => {
 
                     <div className="space-y-2 mb-5">
                         {(mode === 'daily' ? DAILY : EVENTS).map(s => (
-                            <button key={s} onClick={() => start(s)}
+                            <button key={s} onClick={() => requestStart(mode, s)}
                                 className="w-full text-left rounded-2xl px-4 py-3.5 bg-white/[0.035] border border-white/[0.06] active:scale-[0.99] transition flex items-center justify-between group">
                                 <span className="text-[13.5px] text-white/85">{s}</span>
                                 <ArrowRight size={15} className="text-white/25 group-active:translate-x-0.5 transition-transform" />
@@ -323,10 +331,10 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog }) => {
                         <label className="text-[10px] uppercase tracking-wider text-white/40 px-1">自定义体验</label>
                         <div className="flex gap-2 mt-2">
                             <input value={theme} onChange={e => setTheme(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter') start(theme); }}
+                                onKeyDown={e => { if (e.key === 'Enter') requestStart(mode, theme); }}
                                 placeholder="例如：搬家前最后一晚 / 收到那条消息的清晨"
                                 className="flex-1 bg-white/[0.05] border border-white/[0.08] rounded-xl px-3 py-2.5 text-[12.5px] text-white placeholder-white/25 outline-none" />
-                            <button onClick={() => start(theme)} className="px-4 rounded-xl text-[12px] font-semibold text-[#1a1530]" style={{ background: ACCENT }}>开始</button>
+                            <button onClick={() => requestStart(mode, theme)} className="px-4 rounded-xl text-[12px] font-semibold text-[#1a1530]" style={{ background: ACCENT }}>开始</button>
                         </div>
                     </div>
                 </div>
@@ -335,18 +343,23 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog }) => {
     }
 
     // ========================================================
-    //  RENDER: LOADING
+    //  RENDER: LOADING (background generation in progress / about to play)
     // ========================================================
-    if (phase === 'loading') {
+    if (phase === 'idle') {
+        const t = sim.status === 'loading' ? sim.theme : theme;
         return (
             <Shell wallpaper={wallpaper}>
+                <TopBar onBack={onExit} />
                 <div className="flex-1 flex flex-col items-center justify-center gap-5 px-10 text-center">
                     <div className="relative">
                         <HourglassMedium size={40} weight="light" style={{ color: ACCENT }} className="animate-pulse" />
                         <div className="absolute inset-0 blur-2xl rounded-full" style={{ background: `${ACCENT}55` }} />
                     </div>
-                    <div className="text-[13px] text-white/70">{loadStage}</div>
-                    <div className="text-[11px] text-white/35 leading-relaxed">导演正在把记忆、对话与情绪<br />编排成 TA 的一天…</div>
+                    <div className="text-[13px] text-white/75">正在编排「{t}」…</div>
+                    <div className="text-[11px] text-white/35 leading-relaxed">把记忆、对话与情绪编排成 TA 的一天，<br />可能要十几秒。</div>
+                    <button onClick={onExit} className="mt-3 px-5 py-2.5 rounded-xl text-[12px] text-white/75 bg-white/[0.06] border border-white/[0.08] active:scale-95 transition">
+                        先去别处逛逛 · 好了通知我
+                    </button>
                 </div>
             </Shell>
         );
@@ -451,22 +464,107 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog }) => {
 const screenEntrance = (kind: BeatKind): string =>
     kind === 'app' ? 'animate-app-open' : 'animate-fade-in';
 
-// 逐字敲出的内心独白（底部）
-const MonoLine: React.FC<{ text: string }> = ({ text }) => (
+type Vibe = NonNullable<Beat['vibe']>;
+// 确定性伪随机（按种子），保证同一 beat 每次渲染散布一致
+const rnd = (n: number) => { const x = Math.sin(n * 99.73) * 43758.545; return x - Math.floor(x); };
+
+const vibeTint: Record<Vibe, string> = {
+    calm: 'rgba(255,255,255,0.9)',
+    chaotic: 'rgba(255,255,255,0.85)',
+    happy: '#ffb3d9',
+    anxious: '#ff9a9a',
+    numb: 'rgba(255,255,255,0.45)',
+    tender: '#e6c9ff',
+};
+
+// 逐字敲出的内心独白（底部），按情绪微调色调
+const MonoLine: React.FC<{ text: string; vibe?: Vibe }> = ({ text, vibe = 'calm' }) => (
     <div className="absolute left-0 right-0 bottom-6 px-8 text-center pointer-events-none z-20">
         <span className="inline-block px-3 py-1 rounded-2xl bg-black/30 backdrop-blur-sm">
             <Typewriter drafts={[]} sent={text} placeholder=""
-                className="text-[15px] text-white/90 leading-relaxed" />
+                className={`text-[15px] leading-relaxed ${vibe === 'anxious' ? 'tracking-tight' : ''}`} />
         </span>
     </div>
 );
+
+// 情绪化的「内心独白」全屏演出：混乱铺满 / 开心粉色飘飘 / 麻木冷淡 / 焦虑紧绷
+const MoodThought: React.FC<{ text: string; vibe?: Vibe }> = ({ text, vibe = 'calm' }) => {
+    if (vibe === 'chaotic') {
+        const frags = text.split(/[，。、！？!?,.\s]+/).filter(Boolean);
+        const pool = frags.length >= 4 ? frags : [...frags, ...frags, ...frags].slice(0, Math.max(6, frags.length));
+        return (
+            <div className="absolute inset-0 overflow-hidden">
+                {pool.map((f, i) => (
+                    <span key={i} className="absolute whitespace-nowrap animate-fade-in"
+                        style={{
+                            top: `${8 + rnd(i + 1) * 78}%`, left: `${4 + rnd(i + 7) * 64}%`,
+                            transform: `rotate(${(rnd(i + 3) - 0.5) * 46}deg)`,
+                            fontSize: `${13 + rnd(i + 5) * 17}px`,
+                            opacity: 0.35 + rnd(i + 9) * 0.6,
+                            color: 'white', fontFamily: "'Shippori Mincho','Noto Sans SC',serif",
+                            animationDelay: `${i * 90}ms`, animationFillMode: 'backwards',
+                            textShadow: '0 1px 8px rgba(0,0,0,0.5)',
+                        }}>
+                        {f}
+                    </span>
+                ))}
+            </div>
+        );
+    }
+    if (vibe === 'happy') {
+        const deco = ['✿', '♡', '❀', '✦', '♥', '✧'];
+        return (
+            <div className="absolute inset-0 overflow-hidden flex items-center justify-center px-10">
+                {deco.map((d, i) => (
+                    <span key={i} className="absolute animate-float" style={{
+                        bottom: `${10 + rnd(i + 2) * 20}%`, left: `${8 + rnd(i + 4) * 80}%`,
+                        fontSize: `${14 + rnd(i + 6) * 14}px`, color: '#ffc2e0',
+                        animationDelay: `${i * 350}ms`, opacity: 0.8,
+                    }}>{d}</span>
+                ))}
+                <p className="text-[20px] text-center leading-relaxed animate-fade-in font-semibold"
+                    style={{ background: 'linear-gradient(90deg,#ffd6ec,#ffb3d9,#ffc2e0)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontFamily: "'Shippori Mincho','Noto Sans SC',serif" }}>
+                    {text}
+                </p>
+            </div>
+        );
+    }
+    if (vibe === 'anxious') {
+        return (
+            <div className="absolute inset-0 flex items-center justify-center px-10">
+                <p className="text-[18px] text-center leading-relaxed tracking-tight animate-pulse"
+                    style={{ color: vibeTint.anxious, fontFamily: "'Shippori Mincho','Noto Sans SC',serif", textShadow: '0 0 12px rgba(255,80,80,0.3)' }}>
+                    {text}
+                </p>
+            </div>
+        );
+    }
+    if (vibe === 'numb') {
+        return (
+            <div className="absolute inset-0 flex items-center justify-center px-12">
+                <p className="text-[14px] text-center leading-loose animate-fade-in" style={{ color: vibeTint.numb, animationDuration: '2s' }}>
+                    {text}
+                </p>
+            </div>
+        );
+    }
+    // calm / tender → typed, soft
+    return (
+        <div className="absolute inset-0 flex items-center justify-center px-10">
+            <Typewriter drafts={[]} sent={text} placeholder=""
+                className="text-[19px] text-center leading-relaxed"
+                />
+            {vibe === 'tender' && <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 50% 50%, rgba(230,201,255,0.12), transparent 60%)' }} />}
+        </div>
+    );
+};
 
 // ============================================================
 //  SCREEN CONTENT — lock / app / flashback (the persistent layer)
 // ============================================================
 const ScreenContent: React.FC<{ beat: Beat; char: CharacterProfile; showMono: boolean; dimmed?: boolean }> =
     ({ beat, char, showMono, dimmed }) => {
-        const mono = showMono && beat.monologue ? <MonoLine text={beat.monologue} /> : null;
+        const mono = showMono && beat.monologue ? <MonoLine text={beat.monologue} vibe={beat.vibe} /> : null;
         const dim = dimmed ? <div className="absolute inset-0 bg-black/25 backdrop-blur-[1px] z-10 pointer-events-none" /> : null;
 
         if (beat.kind === 'lock') {
@@ -533,10 +631,10 @@ const ScreenContent: React.FC<{ beat: Beat; char: CharacterProfile; showMono: bo
 // ============================================================
 const Overlay: React.FC<{ beat: Beat }> = ({ beat }) => {
     if (beat.kind === 'thought') {
+        const scrim = beat.vibe === 'happy' ? 'bg-black/30' : beat.vibe === 'chaotic' ? 'bg-black/60' : 'bg-black/45 backdrop-blur-sm';
         return (
-            <div className="absolute inset-0 flex items-center justify-center px-10 bg-black/45 backdrop-blur-sm">
-                <div className="text-center"><Typewriter drafts={[]} sent={beat.monologue || '……'} placeholder=""
-                    className="text-[19px] text-white/90 leading-relaxed" /></div>
+            <div className={`absolute inset-0 ${scrim}`}>
+                <MoodThought text={beat.monologue || '……'} vibe={beat.vibe} />
             </div>
         );
     }
@@ -553,7 +651,7 @@ const Overlay: React.FC<{ beat: Beat }> = ({ beat }) => {
                 <div className="text-[13px] text-white font-semibold">{n?.title}</div>
                 <div className="text-[11.5px] text-white/65 mt-0.5">{n?.body}</div>
             </div>
-            {beat.monologue && <MonoLine text={beat.monologue} />}
+            {beat.monologue && <MonoLine text={beat.monologue} vibe={beat.vibe} />}
         </div>
     );
 };
@@ -829,9 +927,17 @@ ${recent || '（暂无最近对话）'}
   "beats": [ ... 20~36 个 beat ... ]
 }
 
-每个 beat 是一个对象，必含 "kind"，按需含 "time"(HH:MM)、"monologue"、"pace"(1普通/2稍慢/3高潮)。kind 取值与字段：
+每个 beat 是一个对象，必含 "kind"，按需含 "time"(HH:MM)、"monologue"、"pace"(1普通/2稍慢/3高潮)、"vibe"。
+**"vibe" 决定这段文字的视觉演出**，请根据 TA 此刻的情绪状态给 thought / 关键 monologue 标注，取值：
+  - "calm" 平静（默认，文字居中缓缓敲出）
+  - "chaotic" 混乱崩溃（文字会铺天盖地散落满屏——情绪越乱越适合）
+  - "happy" 开心（粉色字 + 飘飘上浮的小装饰）
+  - "anxious" 焦虑（文字紧绷、发红、轻微脉动）
+  - "numb" 麻木空洞（文字冷淡、缩小、大片留白）
+  - "tender" 温柔/眷恋（柔光）
+kind 取值与字段：
 - {"kind":"lock","time":"07:12","notif":{"app":"闹钟","title":"...","body":"..."},"monologue":"不想起床。"}  // 锁屏/亮屏
-- {"kind":"thought","monologue":"算了。"}  // 纯内心独白
+- {"kind":"thought","monologue":"算了。","vibe":"numb"}  // 纯内心独白；情绪强烈时务必给 vibe（如崩溃→"chaotic"、雀跃→"happy"）
 - {"kind":"notification","notif":{"app":"微信","title":"...","body":"...","tone":"push|sms|system|flashback"},"monologue":"..."}  // 横幅通知
 - {"kind":"app","app":{"name":"微信","view":"chat","chat":{"name":"妈","lines":[{"me":false,"text":"吃饭了吗"},{"me":true,"text":"吃了"}]}}}
 - {"kind":"app","app":{"name":"微信","view":"compose","compose":{"to":"她","drafts":["在吗","你最近还好吗"],"sent":null}}}  // 打字后删除；sent=null表示最终没发，sent填字符串表示最终发送
