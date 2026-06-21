@@ -2,9 +2,13 @@
 
 
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" translate="no">
   <head>
     <meta charset="utf-8" />
+    <!-- 关掉浏览器自动翻译：SullyOS 本身就是中文 App，翻译纯属添乱（甚至「中译中」），
+         还会改动 React 托管的 DOM 触发 insertBefore/removeChild 白屏。translate="no" + 这两个 meta
+         覆盖 Chrome/Edge/三星 等主流浏览器。utils/translateCrashGuard 作为兜底护栏仍保留。 -->
+    <meta name="google" content="notranslate" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>SullyOS</title>
     
