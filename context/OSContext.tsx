@@ -14,6 +14,7 @@ import { runWorldEpisode, rerollWorldCharBeat } from '../utils/worldHome/engine'
 import { ChatParser } from '../utils/chatParser';
 import { safeFetchJson } from '../utils/safeApi';
 import { recordApiCall, setApiCallAmbientContext } from '../utils/apiCallLog';
+import { shouldRouteViaNativeHttp, nativeHttpFetch } from '../utils/nativeHttpFetch';
 import { INSTALLED_APPS } from '../constants';
 import { normalizeCharacterImpression, normalizeCharacterDefaults } from '../utils/impression';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
@@ -742,8 +743,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const urlStr = String(resource);
           const fetchStartedAt = Date.now();
 
+          // 原生 App（Capacitor）：LLM 类接口改走 CapacitorHttp 原生 HTTP，天然绕开 WebView
+          // 的 CORS——服务端没开 CORS 的源（如 Pioneer）在打包后的 App 里也能直连，无需代理。
+          // 纯网页版 shouldRouteViaNativeHttp 恒为 false，行为完全不变。日志/记录逻辑照旧。
+          const runFetch = shouldRouteViaNativeHttp(urlStr)
+              ? () => nativeHttpFetch(resource, config)
+              : () => originalFetch(...args);
+
           try {
-              const response = await originalFetch(...args);
+              const response = await runFetch();
               const durationMs = Date.now() - fetchStartedAt;
 
               // 「API 调用记录」统一记录入口：所有 /chat/completions（裸 fetch + safeFetchJson
