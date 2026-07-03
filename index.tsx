@@ -1,6 +1,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { installAnthropicDirectAccess } from './utils/anthropicDirectAccess';
+
+// 必须最先装载：让所有发往 api.anthropic.com 的请求自动带上
+// 浏览器直连 header，否则被 CORS 拦截报 "Load failed"
+installAnthropicDirectAccess();
 import { installTranslateCrashGuard } from './utils/translateCrashGuard';
 import { ActiveMsgRuntime } from './utils/activeMsgRuntime';
 import { KeepAlive } from './utils/keepAlive';
